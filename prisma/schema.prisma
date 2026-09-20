@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  role         String    @default("RESEARCHER") // RESEARCHER, TRIAGER, ADMIN
+  avatar       String?
+  bountyEarned Int       @default(0)
+  reputation   Int       @default(100)
+  reports      Report[]  @relation("ResearcherReports")
+  comments     Comment[]
+  createdAt    DateTime  @default(now())
+}
+
+model Program {
+  id        String   @id @default(uuid())
+  name      String
+  handle    String   @unique
+  scope     String
+  rules     String
+  minBounty Int      @default(100)
+  maxBounty Int      @default(5000)
+  reports   Report[]
+  createdAt DateTime @default(now())
+}
+
+model Report {
+  id                String    @id @default(uuid())
+  referenceId       String    @unique // e.g. BB-001
+  title             String
+  description       String
+  asset             String
+  vulnerabilityType String
+  cvssVector        String
+  cvssScore         Float
+  severity          String    // CRITICAL, HIGH, MEDIUM, LOW, NONE
+  status            String    @default("SUBMITTED") // SUBMITTED, TRIAGED, ACCEPTED, IN_PROGRESS, RESOLVED, DUPLICATE, REJECTED
+  poc               String?
+  stepsToReproduce  String
+  bountyAmount      Int?      // in USD ($)
+  researcherId      String
+  researcher        User      @relation("ResearcherReports", fields: [researcherId], references: [id])
+  programId         String
+  program           Program   @relation(fields: [programId], references: [id])
+  comments          Comment[]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model Comment {
+  id         String   @id @default(uuid())
+  reportId   String
+  report     Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id])
+  body       String
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+model Tool {
+  id          String  @id @default(uuid())
+  name        String
+  category    String
+  description String
+  url         String?
+}
+
+model MethodologyStep {
+  id          String @id @default(uuid())
+  order       Int
+  title       String
+  description String
+  tools       String
+}
