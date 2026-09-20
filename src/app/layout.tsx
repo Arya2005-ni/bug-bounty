@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { RoleProvider } from "@/components/RoleContext";
+import { RealtimeProvider } from "@/components/RealtimeContext";
 import Navbar from "@/components/Navbar";
 
 export const metadata: Metadata = {
@@ -25,10 +26,12 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen flex flex-col antialiased">
         <RoleProvider>
-          <Navbar />
-          <main className="flex-1 max-w-[1320px] w-full mx-auto px-4 py-8 space-y-12">
-            {children}
-          </main>
+          <RealtimeProvider>
+            <Navbar />
+            <main className="flex-1 max-w-[1320px] w-full mx-auto px-4 py-8 space-y-12">
+              {children}
+            </main>
+          </RealtimeProvider>
 
           {/* Global Footer */}
           <footer className="bg-[#070a10] border-t border-white/10 py-10 mt-16 print-hide">

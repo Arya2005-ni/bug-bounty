@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { emitRealtimeEvent } from "@/lib/events";
 import { z } from "zod";
 
 const createReportSchema = z.object({
@@ -127,6 +128,8 @@ export async function POST(request: NextRequest) {
         },
       },
     });
+
+    emitRealtimeEvent("report_created", { report: newReport });
 
     return NextResponse.json(newReport, { status: 201 });
   } catch (error: any) {

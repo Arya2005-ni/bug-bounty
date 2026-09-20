@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { emitRealtimeEvent } from "@/lib/events";
 import { z } from "zod";
 
 const createCommentSchema = z.object({
@@ -30,9 +31,18 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Resolve target report by id or referenceId
+    const targetReport = await prisma.report.findFirst({
+      where: { OR: [{ id: validated.reportId }, { referenceId: validated.reportId }] },
+    });
+
+    if (!targetReport) {
+      return NextResponse.json({ error: "Report not found" }, { status: 404 });
+    }
+
     const comment = await prisma.comment.create({
       data: {
-        reportId: validated.reportId,
+        reportId: targetReport.id,
         authorId: author.id,
         body: validated.body,
         isInternal: validated.isInternal,
@@ -42,6 +52,12 @@ export async function POST(request: NextRequest) {
           select: { id: true, name: true, role: true, avatar: true },
         },
       },
+    });
+
+    emitRealtimeEvent("comment_added", {
+      comment,
+      reportId: targetReport.id,
+      referenceId: targetReport.referenceId,
     });
 
     return NextResponse.json(comment, { status: 201 });

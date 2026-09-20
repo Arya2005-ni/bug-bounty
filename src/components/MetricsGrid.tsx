@@ -1,18 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { PlatformStats } from "@/lib/types";
+import { useRealtimeListener } from "@/components/RealtimeContext";
 import { AlertTriangle, CheckCircle2, ShieldAlert, DollarSign } from "lucide-react";
 
 export default function MetricsGrid() {
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
-
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const res = await fetch("/api/stats");
       if (res.ok) {
@@ -24,7 +21,23 @@ export default function MetricsGrid() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+
+    // Fallback sync every 10 seconds
+    const interval = setInterval(() => {
+      fetchStats();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [fetchStats]);
+
+  // Real-time listener: whenever any report is created, updated, or deleted, recalculate metrics immediately
+  useRealtimeListener(["report_created", "report_updated", "report_deleted", "stats_updated"], () => {
+    fetchStats();
+  });
 
   if (loading || !stats) {
     return (

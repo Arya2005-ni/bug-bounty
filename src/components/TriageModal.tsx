@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { Report } from "@/lib/types";
+import { useState, useEffect, useCallback } from "react";
+import { Report, Comment } from "@/lib/types";
 import { useRole } from "./RoleContext";
-import { X, Send, Award, CheckCircle, ShieldAlert } from "lucide-react";
+import { useRealtimeListener } from "./RealtimeContext";
+import { X, Send, Award, CheckCircle, ShieldAlert, Radio } from "lucide-react";
 
 interface TriageModalProps {
   report: Report | null;
@@ -13,20 +14,83 @@ interface TriageModalProps {
 
 export default function TriageModal({ report, onClose, onUpdate }: TriageModalProps) {
   const { role } = useRole();
+  const [activeReport, setActiveReport] = useState<Report | null>(report);
   const [newStatus, setNewStatus] = useState<string>(report?.status || "SUBMITTED");
   const [bounty, setBounty] = useState<number | string>(report?.bountyAmount || "");
   const [commentText, setCommentText] = useState("");
   const [isInternalComment, setIsInternalComment] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [postingComment, setPostingComment] = useState(false);
 
-  if (!report) return null;
+  // Sync props to activeReport and fetch full details (with comments)
+  useEffect(() => {
+    if (!report) {
+      setActiveReport(null);
+      return;
+    }
+
+    setActiveReport(report);
+    setNewStatus(report.status);
+    setBounty(report.bountyAmount || "");
+
+    let isMounted = true;
+    async function loadFullReport() {
+      try {
+        const res = await fetch(`/api/reports/${report.id}`);
+        if (res.ok && isMounted) {
+          const fullData = await res.json();
+          setActiveReport(fullData);
+          setNewStatus(fullData.status);
+          setBounty(fullData.bountyAmount || "");
+        }
+      } catch (err) {
+        console.error("Failed to load full report details", err);
+      }
+    }
+
+    loadFullReport();
+    return () => {
+      isMounted = false;
+    };
+  }, [report]);
+
+  // Real-time live updates while modal is open
+  useRealtimeListener(["comment_added", "report_updated"], (msg) => {
+    if (!activeReport) return;
+
+    if (msg.type === "comment_added") {
+      const { comment, reportId } = msg.data || {};
+      if (reportId === activeReport.id && comment) {
+        setActiveReport((prev) => {
+          if (!prev) return null;
+          const exists = prev.comments?.some((c) => c.id === comment.id);
+          if (exists) return prev;
+          return {
+            ...prev,
+            comments: [...(prev.comments || []), comment],
+          };
+        });
+      }
+    } else if (msg.type === "report_updated") {
+      const updated = msg.data?.report;
+      if (updated && updated.id === activeReport.id) {
+        setActiveReport((prev) => (prev ? { ...prev, ...updated } : null));
+        setNewStatus(updated.status);
+        if (updated.bountyAmount !== undefined) {
+          setBounty(updated.bountyAmount || "");
+        }
+      }
+    }
+  });
+
+  if (!report || !activeReport) return null;
 
   const canTriage = role === "TRIAGER" || role === "ADMIN";
 
   const handleUpdateStatusAndBounty = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/reports/${report.id}`, {
+      const res = await fetch(`/api/reports/${activeReport.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -48,14 +112,15 @@ export default function TriageModal({ report, onClose, onUpdate }: TriageModalPr
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!commentText.trim()) return;
+    if (!commentText.trim() || postingComment) return;
 
+    setPostingComment(true);
     try {
       const res = await fetch("/api/comments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          reportId: report.id,
+          reportId: activeReport.id,
           body: commentText.trim(),
           isInternal: isInternalComment,
           role: role,
@@ -68,6 +133,8 @@ export default function TriageModal({ report, onClose, onUpdate }: TriageModalPr
       }
     } catch (e) {
       console.error("Failed to post comment", e);
+    } finally {
+      setPostingComment(false);
     }
   };
 
@@ -78,12 +145,18 @@ export default function TriageModal({ report, onClose, onUpdate }: TriageModalPr
         <div className="flex items-start justify-between border-b border-white/10 pb-4">
           <div className="flex items-center gap-3">
             <span className="px-2.5 py-1 rounded text-xs font-mono font-bold bg-[#00b4d8]/15 text-[#00b4d8] border border-[#00b4d8]/30">
-              {report.referenceId}
+              {activeReport.referenceId}
             </span>
             <div>
-              <h2 className="text-lg font-bold text-white leading-snug">{report.title}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold text-white leading-snug">{activeReport.title}</h2>
+                <span className="flex items-center gap-1 text-[10px] font-mono text-[#00ff9c] bg-[#00ff9c]/10 px-2 py-0.5 rounded border border-[#00ff9c]/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#00ff9c] animate-pulse"></span>
+                  LIVE
+                </span>
+              </div>
               <div className="text-xs font-mono text-gray-400 mt-0.5">
-                Target: <span className="text-[#00ff9c]">{report.asset}</span>
+                Target: <span className="text-[#00ff9c]">{activeReport.asset}</span>
               </div>
             </div>
           </div>
@@ -96,20 +169,20 @@ export default function TriageModal({ report, onClose, onUpdate }: TriageModalPr
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-[#0b0f19] p-3.5 rounded-lg border border-white/5 text-xs">
           <div>
             <span className="text-gray-500 font-mono text-[10.5px] uppercase block">CVSS Score</span>
-            <span className="text-white font-mono font-bold text-sm">{report.cvssScore.toFixed(1)} / 10.0</span>
+            <span className="text-white font-mono font-bold text-sm">{activeReport.cvssScore.toFixed(1)} / 10.0</span>
           </div>
           <div>
             <span className="text-gray-500 font-mono text-[10.5px] uppercase block">Severity</span>
-            <span className="text-orange-400 font-mono font-bold">{report.severity}</span>
+            <span className="text-orange-400 font-mono font-bold">{activeReport.severity}</span>
           </div>
           <div>
             <span className="text-gray-500 font-mono text-[10.5px] uppercase block">Status</span>
-            <span className="text-[#00ff9c] font-mono font-bold">{report.status}</span>
+            <span className="text-[#00ff9c] font-mono font-bold">{activeReport.status}</span>
           </div>
           <div>
             <span className="text-gray-500 font-mono text-[10.5px] uppercase block">Awarded Bounty</span>
             <span className="text-[#00ff9c] font-mono font-bold">
-              {report.bountyAmount ? `$${report.bountyAmount.toLocaleString()}` : "Pending"}
+              {activeReport.bountyAmount ? `$${activeReport.bountyAmount.toLocaleString()}` : "Pending"}
             </span>
           </div>
         </div>
@@ -120,7 +193,7 @@ export default function TriageModal({ report, onClose, onUpdate }: TriageModalPr
             CVSS v3.1 Vector String
           </span>
           <code className="text-xs font-mono text-[#00b4d8] bg-black/40 px-3 py-1.5 rounded border border-white/5 block overflow-x-auto">
-            {report.cvssVector}
+            {activeReport.cvssVector}
           </code>
         </div>
 
@@ -129,24 +202,24 @@ export default function TriageModal({ report, onClose, onUpdate }: TriageModalPr
           <div>
             <span className="font-mono text-gray-400 uppercase tracking-wider block mb-1">Vulnerability Summary</span>
             <div className="bg-black/30 p-3 rounded border border-white/5 text-gray-200 leading-relaxed">
-              {report.description}
+              {activeReport.description}
             </div>
           </div>
 
           <div>
             <span className="font-mono text-gray-400 uppercase tracking-wider block mb-1">Reproduction Steps</span>
             <pre className="bg-black/40 p-3 rounded border border-white/5 text-gray-300 font-mono whitespace-pre-wrap leading-relaxed">
-              {report.stepsToReproduce}
+              {activeReport.stepsToReproduce}
             </pre>
           </div>
 
-          {report.poc && (
+          {activeReport.poc && (
             <div>
               <span className="font-mono text-[#00ff9c] uppercase tracking-wider block mb-1">
                 Sanitized Proof-of-Concept (PoC)
               </span>
               <pre className="bg-black/50 p-3 rounded border border-white/10 text-[#a8dadc] font-mono whitespace-pre-wrap overflow-x-auto">
-                {report.poc}
+                {activeReport.poc}
               </pre>
             </div>
           )}
@@ -205,15 +278,21 @@ export default function TriageModal({ report, onClose, onUpdate }: TriageModalPr
 
         {/* Activity & Comments Thread */}
         <div className="border-t border-white/10 pt-4 space-y-3">
-          <h4 className="text-xs font-mono uppercase text-gray-400 tracking-wider">
-            Triage Discussion &amp; Audit Log ({report.comments?.length || 0})
-          </h4>
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-mono uppercase text-gray-400 tracking-wider">
+              Triage Discussion &amp; Audit Log ({activeReport.comments?.length || 0})
+            </h4>
+            <span className="text-[10px] font-mono text-[#00ff9c] flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#00ff9c] animate-ping"></span>
+              Live Sync
+            </span>
+          </div>
 
           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-            {(!report.comments || report.comments.length === 0) && (
+            {(!activeReport.comments || activeReport.comments.length === 0) && (
               <div className="text-xs text-gray-500 italic py-2">No comments recorded yet.</div>
             )}
-            {report.comments?.map((c) => (
+            {activeReport.comments?.map((c) => (
               <div
                 key={c.id}
                 className={`p-2.5 rounded text-xs space-y-1 ${

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { emitRealtimeEvent } from "@/lib/events";
 import { z } from "zod";
 
 const updateReportSchema = z.object({
@@ -95,6 +96,8 @@ export async function PATCH(
       });
     }
 
+    emitRealtimeEvent("report_updated", { report: updated });
+
     return NextResponse.json(updated);
   } catch (error: any) {
     console.error("Error updating report:", error);
@@ -124,6 +127,8 @@ export async function DELETE(
     await prisma.report.delete({
       where: { id: report.id },
     });
+
+    emitRealtimeEvent("report_deleted", { reportId: report.id, referenceId: report.referenceId });
 
     return NextResponse.json({ success: true, message: "Report deleted" });
   } catch (error) {

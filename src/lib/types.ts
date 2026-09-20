@@ -80,3 +80,27 @@ export interface PlatformStats {
   openCount: number;
   totalBountiesPaid: number;
 }
+
+export type RealtimeEventType =
+  | "connected"
+  | "heartbeat"
+  | "report_created"
+  | "report_updated"
+  | "report_deleted"
+  | "comment_added"
+  | "stats_updated";
+
+export interface RealtimeMessage {
+  type: RealtimeEventType;
+  data: any;
+  timestamp: string;
+}
+
+export interface RealtimeToast {
+  id: string;
+  type: RealtimeEventType;
+  title: string;
+  message: string;
+  badge?: string;
+  timestamp: Date;
+}

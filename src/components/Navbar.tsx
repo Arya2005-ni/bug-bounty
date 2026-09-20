@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRole } from "./RoleContext";
-import { Shield, PlusCircle, Printer, UserCheck, Menu, X } from "lucide-react";
+import { useRealtime } from "./RealtimeContext";
+import { Shield, PlusCircle, Printer, UserCheck, Menu, X, Radio } from "lucide-react";
 import { useState } from "react";
 
 export default function Navbar() {
   const pathname = usePathname();
   const { role, setRole, userName, userAvatar } = useRole();
+  const { isConnected } = useRealtime();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [roleDropdownOpen, setRoleDropdownOpen] = useState(false);
 
@@ -78,6 +80,30 @@ export default function Navbar() {
 
         {/* Actions & Role Switcher */}
         <div className="flex items-center gap-2.5 flex-shrink-0">
+          {/* Live Sync Badge */}
+          <div
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono border transition-all ${
+              isConnected
+                ? "bg-[#00ff9c]/10 text-[#00ff9c] border-[#00ff9c]/30 shadow-[0_0_10px_rgba(0,255,156,0.15)]"
+                : "bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse"
+            }`}
+            title={isConnected ? "Real-time Live Stream Active (SSE)" : "Connecting to real-time stream..."}
+          >
+            <span className="relative flex h-2 w-2">
+              {isConnected && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00ff9c] opacity-75"></span>
+              )}
+              <span
+                className={`relative inline-flex rounded-full h-2 w-2 ${
+                  isConnected ? "bg-[#00ff9c]" : "bg-amber-400"
+                }`}
+              ></span>
+            </span>
+            <span className="font-bold tracking-wider uppercase text-[10px]">
+              {isConnected ? "LIVE SYNC" : "CONNECTING"}
+            </span>
+          </div>
+
           {/* Role Switcher */}
           <div className="relative">
             <button

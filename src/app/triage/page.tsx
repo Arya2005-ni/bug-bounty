@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Report } from "@/lib/types";
 import { useRole } from "@/components/RoleContext";
+import { useRealtimeListener } from "@/components/RealtimeContext";
 import FindingsTable from "@/components/FindingsTable";
 import TriageModal from "@/components/TriageModal";
 import { ShieldCheck, ShieldAlert, CheckCircle2, DollarSign, Filter } from "lucide-react";
@@ -13,11 +14,7 @@ export default function TriagePage() {
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchTriageQueue();
-  }, []);
-
-  const fetchTriageQueue = async () => {
+  const fetchTriageQueue = useCallback(async () => {
     try {
       const res = await fetch("/api/reports");
       if (res.ok) {
@@ -29,7 +26,41 @@ export default function TriagePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchTriageQueue();
+
+    // Fallback background sync every 8 seconds
+    const interval = setInterval(() => {
+      fetchTriageQueue();
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, [fetchTriageQueue]);
+
+  // Instant real-time socket/SSE listener
+  useRealtimeListener(["report_created", "report_updated", "report_deleted"], (msg) => {
+    if (msg.type === "report_created" && msg.data?.report) {
+      const newReport: Report = msg.data.report;
+      setReports((prev) => {
+        if (prev.some((r) => r.id === newReport.id || r.referenceId === newReport.referenceId)) {
+          return prev;
+        }
+        return [newReport, ...prev];
+      });
+    } else if (msg.type === "report_updated" && msg.data?.report) {
+      const updatedReport: Report = msg.data.report;
+      setReports((prev) =>
+        prev.map((r) => (r.id === updatedReport.id ? updatedReport : r))
+      );
+      setSelectedReport((curr) => (curr?.id === updatedReport.id ? updatedReport : curr));
+    } else if (msg.type === "report_deleted" && msg.data?.reportId) {
+      const deletedId: string = msg.data.reportId;
+      setReports((prev) => prev.filter((r) => r.id !== deletedId));
+      setSelectedReport((curr) => (curr?.id === deletedId ? null : curr));
+    }
+  });
 
   const pendingCount = reports.filter((r) => r.status === "SUBMITTED" || r.status === "TRIAGED").length;
   const inProgressCount = reports.filter((r) => r.status === "IN_PROGRESS").length;
